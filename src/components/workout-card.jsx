@@ -9,17 +9,14 @@ export default function WorkoutCard({ workout, onStartWorkout, onDeleteWorkout, 
     <div
       className={`bg-gradient-to-r from-gray-800 to-gray-900 rounded-xl p-4 shadow-lg transition-all duration-300 ${
         isHovered ? "transform scale-105 shadow-xl" : ""
-      } ${isSelected ? "ring-2 ring-indigo-500" : ""}`}
+      } ${isSelected ? "ring-2 ring-green-500" : ""}`}
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
     >
       <div className="flex justify-between items-start mb-2">
         <h3 className="text-xl font-bold text-white">{workout.name}</h3>
         <button
-          onClick={(e) => {
-            e.stopPropagation() // Prevent triggering parent click
-            onDeleteWorkout(workout.id)
-          }}
+          onClick={() => onDeleteWorkout(workout.id)}
           className="text-gray-400 hover:text-red-500 transition-colors"
         >
           <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
