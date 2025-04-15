@@ -1,374 +1,272 @@
+"use client"
+
 import { useState, useEffect, useRef } from "react"
-import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-import { Plus, Play, Pause } from "lucide-react"
-
-
-
-type Session = {
-  id: string
-  name: string
-  startTime: number
-  breakTime: number
-}
-
-type TimerState = {
-  isActive: boolean
-  currentSession: Session | null
-  phase: "countdown" | "workout" | "break"
-  timeLeft: number
-  cyclesCompleted: number
-}
+import WorkoutSettingsDialog from "./workout-settings-dialog"
+import WorkoutCard from "./workout-card"
 
 export default function WorkoutTimer() {
-  const [sessions, setSessions] = useState<Session[]>([])
-  const [dialogOpen, setDialogOpen] = useState(false)
-  const [newSession, setNewSession] = useState<Omit<Session, "id">>({
-    name: "",
-    startTime: 10,
-    breakTime: 5,
+  const [time, setTime] = useState(0)
+  const [isRunning, setIsRunning] = useState(false)
+  const [phase, setPhase] = useState("work") // work, rest
+  const [currentRound, setCurrentRound] = useState(1)
+  const [settings, setSettings] = useState({
+    workTime: 10,
+    restTime: 5,
+    rounds: 3,
+  })
+  const [savedWorkouts, setSavedWorkouts] = useState([])
+  const [countdown, setCountdown] = useState(0)
+  const [isCountdown, setIsCountdown] = useState(false)
+  const [announcementFlags, setAnnouncementFlags] = useState({
+    break: false,
+    complete: false,
+    round: false,
   })
 
-  const [timerState, setTimerState] = useState<TimerState>({
-    isActive: false,
-    currentSession: null,
-    phase: "countdown",
-    timeLeft: 0,
-    cyclesCompleted: 0,
-  })
+  const audioRef = useRef(null)
 
-  const timerRef = useRef<NodeJS.Timeout | null>(null)
-  const audioRef = useRef<HTMLAudioElement | null>(null)
-
+  // Initialize audio
   useEffect(() => {
     audioRef.current = new Audio()
 
-    return () => {
-      if (timerRef.current) {
-        clearInterval(timerRef.current)
-      }
+    // Load saved workouts from localStorage
+    const savedWorkoutsData = localStorage.getItem("savedWorkouts")
+    if (savedWorkoutsData) {
+      setSavedWorkouts(JSON.parse(savedWorkoutsData))
     }
   }, [])
 
-  useEffect(() => {
-    if (timerState.isActive) {
-      timerRef.current = setInterval(() => {
-        setTimerState((prev) => {
-          if (prev.timeLeft <= 1) {
-            // Time's up for current phase
-            if (prev.phase === "countdown") {
-              // After countdown, start workout
-              speakMessage("Your workout time starts now")
-              return {
-                ...prev,
-                phase: "workout",
-                timeLeft: prev.currentSession?.startTime || 0,
-              }
-            } else if (prev.phase === "workout") {
-              // After workout, start break
-              speakMessage("Break time")
-              return {
-                ...prev,
-                phase: "break",
-                timeLeft: prev.currentSession?.breakTime || 0,
-              }
-            } else {
-              // After break, check if we need another cycle
-              const newCyclesCompleted = prev.cyclesCompleted + 1
+  // Play sound function
+  const playSound = (text) => {
+    // Cancel any ongoing speech before starting a new one
+    window.speechSynthesis.cancel()
 
-              if (newCyclesCompleted >= 3) {
-                // Session complete after 3 cycles
-                clearInterval(timerRef.current!)
-                speakMessage("Workout complete")
-                return {
-                  ...prev,
-                  isActive: false,
-                  phase: "countdown",
-                  cyclesCompleted: 0,
-                }
-              } else {
-                // Start next cycle with workout
-                speakMessage("Your workout time starts now")
-                return {
-                  ...prev,
-                  phase: "workout",
-                  timeLeft: prev.currentSession?.startTime || 0,
-                  cyclesCompleted: newCyclesCompleted,
-                }
-              }
-            }
-          } else {
-            // Just decrement time
-            return {
-              ...prev,
-              timeLeft: prev.timeLeft - 1,
+    if (audioRef.current) {
+      const utterance = new SpeechSynthesisUtterance(text)
+      utterance.rate = 1.0
+      utterance.pitch = 1.0
+      utterance.volume = 1.0
+      window.speechSynthesis.speak(utterance)
+    }
+  }
+
+  // Countdown effect
+  useEffect(() => {
+    let interval
+    if (isCountdown && countdown > 0) {
+      interval = setInterval(() => {
+        setCountdown((prev) => prev - 1)
+      }, 1000)
+    } else if (isCountdown && countdown === 0) {
+      setIsCountdown(false)
+      setIsRunning(true)
+      // Remove the playSound("Start") from here
+    }
+    return () => clearInterval(interval)
+  }, [isCountdown, countdown])
+
+  // Timer effect
+  useEffect(() => {
+    let interval
+    if (isRunning) {
+      // Play "Start" sound once when the timer first starts running
+      if (phase === "work" && time === 0 && currentRound === 1 && !announcementFlags.round) {
+        playSound("Start")
+        setAnnouncementFlags((prev) => ({ ...prev, round: true }))
+      }
+
+      interval = setInterval(() => {
+        setTime((prevTime) => {
+          const newTime = prevTime + 1
+
+          if (phase === "work" && newTime >= settings.workTime) {
+            setPhase("rest")
+            setTime(0)
+            // Play "Break" sound once when entering rest phase
+            playSound("Break")
+            return 0
+          } else if (phase === "rest" && newTime >= settings.restTime) {
+            if (currentRound >= settings.rounds) {
+              setIsRunning(false)
+              setPhase("work")
+              setCurrentRound(1)
+              // Play "Workout complete" sound once when workout is complete
+              playSound("Workout complete")
+              return 0
+            } else {
+              // Store the next round number before updating state
+              const nextRound = currentRound + 1
+              setPhase("work")
+              setTime(0)
+              setCurrentRound(nextRound)
+              // Play "Start" sound once when starting a new round
+              playSound("Start")
+              return 0
             }
           }
+
+          return newTime
         })
       }, 1000)
-    } else if (timerRef.current) {
-      clearInterval(timerRef.current)
+    } else if (!isRunning) {
+      clearInterval(interval)
     }
+    return () => clearInterval(interval)
+  }, [isRunning, phase, settings, currentRound, announcementFlags])
 
-    return () => {
-      if (timerRef.current) {
-        clearInterval(timerRef.current)
-      }
-    }
-  }, [timerState.isActive])
-
-  const speakMessage = (message: string) => {
-    if ("speechSynthesis" in window) {
-      const speech = new SpeechSynthesisUtterance(message)
-      window.speechSynthesis.speak(speech)
-    }
-  }
-
-  const handleAddSession = () => {
-    setDialogOpen(true)
-  }
-
-  const handleSaveSession = () => {
-    if (newSession.name.trim() === "") {
-      alert("Please enter a session name")
-      return
-    }
-
-    const session: Session = {
-      id: Date.now().toString(),
-      ...newSession,
-    }
-
-    setSessions((prev) => [...prev, session])
-    setDialogOpen(false)
-    setNewSession({
-      name: "",
-      startTime: 10,
-      breakTime: 5,
-    })
-  }
-
-  const startSession = (session: Session) => {
-    // Stop any current session
-    if (timerState.isActive && timerRef.current) {
-      clearInterval(timerRef.current)
-    }
-
-    // Start with 4 second countdown
-    setTimerState({
-      isActive: true,
-      currentSession: session,
-      phase: "countdown",
-      timeLeft: 4,
-      cyclesCompleted: 0,
-    })
-
-    speakMessage(`Starting session ${session.name} in 4 seconds`)
-  }
-
-  const pauseResumeTimer = () => {
-    setTimerState((prev) => ({
-      ...prev,
-      isActive: !prev.isActive,
-    }))
-  }
-
-  const resetTimer = () => {
-    if (timerRef.current) {
-      clearInterval(timerRef.current)
-    }
-
-    setTimerState({
-      isActive: false,
-      currentSession: null,
-      phase: "countdown",
-      timeLeft: 0,
-      cyclesCompleted: 0,
-    })
-  }
-
-  const getPhaseLabel = () => {
-    switch (timerState.phase) {
-      case "countdown":
-        return "Get Ready"
-      case "workout":
-        return "Workout"
-      case "break":
-        return "Break"
-      default:
-        return ""
-    }
-  }
-
-  const getProgressColor = () => {
-    switch (timerState.phase) {
-      case "countdown":
-        return "bg-yellow-500"
-      case "workout":
-        return "bg-green-500"
-      case "break":
-        return "bg-blue-500"
-      default:
-        return "bg-gray-500"
-    }
-  }
-
-  const formatTime = (seconds: number) => {
+  const formatTime = (seconds) => {
     const mins = Math.floor(seconds / 60)
     const secs = seconds % 60
     return `${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`
   }
 
+  const handleStart = () => {
+    // Reset announcement flags
+    setAnnouncementFlags({
+      break: false,
+      complete: false,
+      round: false,
+    })
+    // Start 4-second countdown
+    setCountdown(4)
+    setIsCountdown(true)
+    setPhase("work")
+    setCurrentRound(1)
+    setTime(0)
+  }
+
+  const handleStop = () => {
+    setIsRunning(false)
+    setIsCountdown(false)
+    playSound("Workout paused")
+  }
+
+  const handleReset = () => {
+    setIsRunning(false)
+    setIsCountdown(false)
+    setTime(0)
+    setPhase("work")
+    setCurrentRound(1)
+    // Reset announcement flags
+    setAnnouncementFlags({
+      break: false,
+      complete: false,
+      round: false,
+    })
+    playSound("Timer reset")
+  }
+
+  const handleSettingsChange = (newSettings) => {
+    setSettings(newSettings)
+    localStorage.setItem("workoutSettings", JSON.stringify(newSettings))
+    playSound("Settings saved")
+  }
+
+  const handleSaveWorkout = (workout) => {
+    const newWorkout = {
+      ...workout,
+      id: Date.now().toString(), // Generate a unique ID
+    }
+    const updatedWorkouts = [...savedWorkouts, newWorkout]
+    setSavedWorkouts(updatedWorkouts)
+    localStorage.setItem("savedWorkouts", JSON.stringify(updatedWorkouts))
+    playSound("Workout saved")
+  }
+
+  const handleDeleteWorkout = (workoutId) => {
+    const updatedWorkouts = savedWorkouts.filter((w) => w.id !== workoutId)
+    setSavedWorkouts(updatedWorkouts)
+    localStorage.setItem("savedWorkouts", JSON.stringify(updatedWorkouts))
+    playSound("Workout deleted")
+  }
+
+  const handleStartSavedWorkout = (workout) => {
+    setSettings({
+      workTime: workout.workTime,
+      restTime: workout.restTime,
+      rounds: workout.rounds,
+    })
+    // Reset announcement flags
+    setAnnouncementFlags({
+      break: false,
+      complete: false,
+      round: false,
+    })
+    // Start 4-second countdown
+    setCountdown(4)
+    setIsCountdown(true)
+    setPhase("work")
+    setCurrentRound(1)
+    setTime(0)
+  }
+
   return (
-    <div className="space-y-6">
-      <div className="flex justify-between items-center">
-        <h2 className="text-xl font-semibold">Your Workout Sessions</h2>
-        <Button onClick={handleAddSession}>
-          <Plus className="mr-2 h-4 w-4" />
-          Add Session
-        </Button>
+    <div className="space-y-8">
+      {/* Timer Display */}
+      <div className="text-center">
+        <div className="text-6xl font-bold text-white mb-4 font-mono">{isCountdown ? countdown : formatTime(time)}</div>
+        <div className="text-xl text-white/80">
+          {isCountdown ? (
+            "Get Ready..."
+          ) : isRunning ? (
+            <span className="flex items-center justify-center">
+              <span
+                className={`inline-block w-3 h-3 rounded-full mr-2 ${phase === "work" ? "bg-green-500" : "bg-red-500"}`}
+              ></span>
+              {phase === "work" ? "Work Time" : "Rest Time"} - Round {currentRound}/{settings.rounds}
+            </span>
+          ) : (
+            "Ready to Start"
+          )}
+        </div>
       </div>
 
-      {timerState.currentSession && (
-        <Card className="mb-6">
-          <CardHeader className="pb-2">
-            <CardTitle className="flex justify-between">
-              <span>{timerState.currentSession.name}</span>
-              <span>Cycle {timerState.cyclesCompleted + 1}/3</span>
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-4">
-              <div className="flex justify-between items-center">
-                <span className="text-lg font-medium">{getPhaseLabel()}</span>
-                <span className="text-3xl font-bold tabular-nums">{formatTime(timerState.timeLeft)}</span>
-              </div>
-
-              <div className="w-full bg-gray-200 rounded-full h-2.5">
-                <div
-                  className={`h-2.5 rounded-full ${getProgressColor()}`}
-                  style={{
-                    width: `${
-                      timerState.phase === "countdown"
-                        ? (timerState.timeLeft / 4) * 100
-                        : timerState.phase === "workout"
-                          ? (timerState.timeLeft / timerState.currentSession.startTime) * 100
-                          : (timerState.timeLeft / timerState.currentSession.breakTime) * 100
-                    }%`,
-                  }}
-                ></div>
-              </div>
-
-              <div className="flex space-x-2">
-                <Button
-                  variant={timerState.isActive ? "outline" : "default"}
-                  onClick={pauseResumeTimer}
-                  className="flex-1"
-                >
-                  {timerState.isActive ? (
-                    <>
-                      <Pause className="mr-2 h-4 w-4" />
-                      Pause
-                    </>
-                  ) : (
-                    <>
-                      <Play className="mr-2 h-4 w-4" />
-                      Resume
-                    </>
-                  )}
-                </Button>
-                <Button variant="destructive" onClick={resetTimer} className="flex-1">
-                  Stop
-                </Button>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {sessions.map((session) => (
-          <Card
-            key={session.id}
-            className="cursor-pointer hover:shadow-md transition-shadow"
-            onClick={() => startSession(session)}
+      {/* Controls */}
+      <div className="flex justify-center space-x-4">
+        {!isRunning && !isCountdown ? (
+          <button
+            onClick={handleStart}
+            className="px-6 py-3 bg-green-500 hover:bg-green-600 text-white rounded-lg font-medium transition-colors"
           >
-            <CardHeader className="pb-2">
-              <CardTitle>{session.name}</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-1">
-                <div className="flex justify-between">
-                  <span className="text-sm text-gray-500">Workout:</span>
-                  <span className="font-medium">{formatTime(session.startTime)}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-sm text-gray-500">Break:</span>
-                  <span className="font-medium">{formatTime(session.breakTime)}</span>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        ))}
+            Start
+          </button>
+        ) : (
+          <button
+            onClick={handleStop}
+            className="px-6 py-3 bg-red-500 hover:bg-red-600 text-white rounded-lg font-medium transition-colors"
+          >
+            Stop
+          </button>
+        )}
+        <button
+          onClick={handleReset}
+          className="px-6 py-3 bg-gray-500 hover:bg-gray-600 text-white rounded-lg font-medium transition-colors"
+        >
+          Reset
+        </button>
+        <WorkoutSettingsDialog
+          settings={settings}
+          onSettingsChange={handleSettingsChange}
+          onSaveWorkout={handleSaveWorkout}
+        />
       </div>
 
-      {sessions.length === 0 && (
-        <div className="text-center py-12 bg-gray-100 rounded-lg">
-          <p className="text-gray-500">No workout sessions yet. Click "Add Session" to create one.</p>
+      {/* Saved Workouts */}
+      {savedWorkouts.length > 0 && (
+        <div className="mt-8">
+          <h2 className="text-2xl font-bold text-white mb-4">Saved Workouts</h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {savedWorkouts.map((workout) => (
+              <WorkoutCard
+                key={workout.id}
+                workout={workout}
+                onStartWorkout={handleStartSavedWorkout}
+                onDeleteWorkout={handleDeleteWorkout}
+              />
+            ))}
+          </div>
         </div>
       )}
-
-      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Add New Workout Session</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4 py-4">
-            <div className="space-y-2">
-              <Label htmlFor="session-name">Session Name</Label>
-              <Input
-                id="session-name"
-                value={newSession.name}
-                onChange={(e) => setNewSession((prev) => ({ ...prev, name: e.target.value }))}
-                placeholder="e.g., HIIT Workout"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="start-time">Workout Time (seconds)</Label>
-              <Input
-                id="start-time"
-                type="number"
-                min="1"
-                value={newSession.startTime}
-                onChange={(e) =>
-                  setNewSession((prev) => ({ ...prev, startTime: Number.parseInt(e.target.value) || 10 }))
-                }
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="break-time">Break Time (seconds)</Label>
-              <Input
-                id="break-time"
-                type="number"
-                min="1"
-                value={newSession.breakTime}
-                onChange={(e) =>
-                  setNewSession((prev) => ({ ...prev, breakTime: Number.parseInt(e.target.value) || 5 }))
-                }
-              />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setDialogOpen(false)}>
-              Cancel
-            </Button>
-            <Button onClick={handleSaveSession}>Save Session</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </div>
   )
 }

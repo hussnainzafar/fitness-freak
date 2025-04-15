@@ -10,9 +10,9 @@ export default function WorkoutTimer() {
   const [phase, setPhase] = useState("work") // work, rest
   const [currentRound, setCurrentRound] = useState(1)
   const [settings, setSettings] = useState({
-    workTime: 30,
-    restTime: 10,
-    rounds: 5,
+    workTime: 10,
+    restTime: 5,
+    rounds: 3,
   })
   const [savedWorkouts, setSavedWorkouts] = useState([])
   const [countdown, setCountdown] = useState(0)
@@ -22,6 +22,7 @@ export default function WorkoutTimer() {
     complete: false,
     round: false,
   })
+  const [selectedWorkout, setSelectedWorkout] = useState(null)
 
   const audioRef = useRef(null)
 
@@ -60,7 +61,8 @@ export default function WorkoutTimer() {
     } else if (isCountdown && countdown === 0) {
       setIsCountdown(false)
       setIsRunning(true)
-      // Remove the playSound("Start") from here
+      // Play start sound here when countdown finishes
+      playSound("Start")
     }
     return () => clearInterval(interval)
   }, [isCountdown, countdown])
@@ -69,40 +71,37 @@ export default function WorkoutTimer() {
   useEffect(() => {
     let interval
     if (isRunning) {
-      // Play "Start" sound once when the timer first starts running
-      if (phase === "work" && time === 0 && currentRound === 1 && !announcementFlags.round) {
-        playSound("Start")
-        setAnnouncementFlags((prev) => ({ ...prev, round: true }))
-      }
-
       interval = setInterval(() => {
         setTime((prevTime) => {
           const newTime = prevTime + 1
 
           if (phase === "work" && newTime >= settings.workTime) {
-            setPhase("rest")
-            setTime(0)
-            // Play "Break" sound once when entering rest phase
-            playSound("Break")
-            return 0
-          } else if (phase === "rest" && newTime >= settings.restTime) {
+            // Check if this is the last round
             if (currentRound >= settings.rounds) {
               setIsRunning(false)
               setPhase("work")
               setCurrentRound(1)
-              // Play "Workout complete" sound once when workout is complete
+              setSelectedWorkout(null) // Clear selected workout
+              // Play "Workout complete" sound
               playSound("Workout complete")
               return 0
-            } else {
-              // Store the next round number before updating state
-              const nextRound = currentRound + 1
-              setPhase("work")
-              setTime(0)
-              setCurrentRound(nextRound)
-              // Play "Start" sound once when starting a new round
-              playSound("Start")
-              return 0
             }
+
+            // Not the last round, go to rest phase
+            setPhase("rest")
+            setTime(0)
+            // Play "Break" sound
+            playSound("Break")
+            return 0
+          } else if (phase === "rest" && newTime >= settings.restTime) {
+            // Store the next round number before updating state
+            const nextRound = currentRound + 1
+            setPhase("work")
+            setTime(0)
+            setCurrentRound(nextRound)
+            // Play "Start" sound for new round
+            playSound(`Round ${nextRound}`)
+            return 0
           }
 
           return newTime
@@ -112,7 +111,7 @@ export default function WorkoutTimer() {
       clearInterval(interval)
     }
     return () => clearInterval(interval)
-  }, [isRunning, phase, settings, currentRound, announcementFlags])
+  }, [isRunning, phase, settings, currentRound])
 
   const formatTime = (seconds) => {
     const mins = Math.floor(seconds / 60)
@@ -138,6 +137,7 @@ export default function WorkoutTimer() {
   const handleStop = () => {
     setIsRunning(false)
     setIsCountdown(false)
+    setSelectedWorkout(null) // Clear selected workout when stopping
     playSound("Workout paused")
   }
 
@@ -147,6 +147,7 @@ export default function WorkoutTimer() {
     setTime(0)
     setPhase("work")
     setCurrentRound(1)
+    setSelectedWorkout(null) // Clear selected workout when resetting
     // Reset announcement flags
     setAnnouncementFlags({
       break: false,
@@ -159,7 +160,7 @@ export default function WorkoutTimer() {
   const handleSettingsChange = (newSettings) => {
     setSettings(newSettings)
     localStorage.setItem("workoutSettings", JSON.stringify(newSettings))
-    playSound("Settings saved")
+    // Don't play sound here
   }
 
   const handleSaveWorkout = (workout) => {
@@ -170,6 +171,7 @@ export default function WorkoutTimer() {
     const updatedWorkouts = [...savedWorkouts, newWorkout]
     setSavedWorkouts(updatedWorkouts)
     localStorage.setItem("savedWorkouts", JSON.stringify(updatedWorkouts))
+    // Play sound when saving workout
     playSound("Workout saved")
   }
 
@@ -177,6 +179,12 @@ export default function WorkoutTimer() {
     const updatedWorkouts = savedWorkouts.filter((w) => w.id !== workoutId)
     setSavedWorkouts(updatedWorkouts)
     localStorage.setItem("savedWorkouts", JSON.stringify(updatedWorkouts))
+
+    // If the deleted workout was selected, clear the selection
+    if (selectedWorkout && selectedWorkout.id === workoutId) {
+      setSelectedWorkout(null)
+    }
+
     playSound("Workout deleted")
   }
 
@@ -186,6 +194,7 @@ export default function WorkoutTimer() {
       restTime: workout.restTime,
       rounds: workout.rounds,
     })
+    setSelectedWorkout(workout) // Set the selected workout
     // Reset announcement flags
     setAnnouncementFlags({
       break: false,
@@ -199,6 +208,9 @@ export default function WorkoutTimer() {
     setCurrentRound(1)
     setTime(0)
   }
+
+  // Check if start/reset buttons should be disabled
+  const buttonsDisabled = savedWorkouts.length > 0 && !selectedWorkout && !isRunning && !isCountdown
 
   return (
     <div className="space-y-8">
@@ -226,7 +238,10 @@ export default function WorkoutTimer() {
         {!isRunning && !isCountdown ? (
           <button
             onClick={handleStart}
-            className="px-6 py-3 bg-green-500 hover:bg-green-600 text-white rounded-lg font-medium transition-colors"
+            disabled={buttonsDisabled}
+            className={`px-6 py-3 bg-green-500 text-white rounded-lg font-medium transition-colors ${
+              buttonsDisabled ? "opacity-50 cursor-not-allowed" : "hover:bg-green-600"
+            }`}
           >
             Start
           </button>
@@ -240,7 +255,10 @@ export default function WorkoutTimer() {
         )}
         <button
           onClick={handleReset}
-          className="px-6 py-3 bg-gray-500 hover:bg-gray-600 text-white rounded-lg font-medium transition-colors"
+          disabled={buttonsDisabled}
+          className={`px-6 py-3 bg-gray-500 text-white rounded-lg font-medium transition-colors ${
+            buttonsDisabled ? "opacity-50 cursor-not-allowed" : "hover:bg-gray-600"
+          }`}
         >
           Reset
         </button>
@@ -248,6 +266,7 @@ export default function WorkoutTimer() {
           settings={settings}
           onSettingsChange={handleSettingsChange}
           onSaveWorkout={handleSaveWorkout}
+          existingWorkoutNames={savedWorkouts.map((workout) => workout.name)}
         />
       </div>
 
@@ -262,6 +281,7 @@ export default function WorkoutTimer() {
                 workout={workout}
                 onStartWorkout={handleStartSavedWorkout}
                 onDeleteWorkout={handleDeleteWorkout}
+                isSelected={selectedWorkout && selectedWorkout.id === workout.id}
               />
             ))}
           </div>
