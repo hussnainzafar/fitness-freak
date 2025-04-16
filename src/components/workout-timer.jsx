@@ -9,6 +9,8 @@ export default function WorkoutTimer() {
   const [isRunning, setIsRunning] = useState(false)
   const [phase, setPhase] = useState("work") // work, rest
   const [currentRound, setCurrentRound] = useState(1)
+  const [isPaused, setIsPaused] = useState(false)
+
   const [settings, setSettings] = useState({
     workTime: 10,
     restTime: 5,
@@ -120,35 +122,42 @@ export default function WorkoutTimer() {
   }
 
   const handleStart = () => {
-    // Reset announcement flags
     setAnnouncementFlags({
       break: false,
       complete: false,
       round: false,
     })
-    // Start 4-second countdown
-    setCountdown(4)
-    setIsCountdown(true)
-    setPhase("work")
-    setCurrentRound(1)
-    setTime(0)
+  
+    if (isPaused) {
+      setIsPaused(false)
+      setIsRunning(true)
+      playSound("Resume workout")
+    } else {
+      // Only reset everything if it's not resuming
+      setCountdown(4)
+      setIsCountdown(true)
+      setPhase("work")
+      setCurrentRound(1)
+      setTime(0)
+    }
   }
+  
 
   const handleStop = () => {
     setIsRunning(false)
     setIsCountdown(false)
-    setSelectedWorkout(null) // Clear selected workout when stopping
+    setIsPaused(true) // Mark that it's paused
     playSound("Workout paused")
   }
-
+  
   const handleReset = () => {
     setIsRunning(false)
     setIsCountdown(false)
+    setIsPaused(false)
     setTime(0)
     setPhase("work")
     setCurrentRound(1)
-    setSelectedWorkout(null) // Clear selected workout when resetting
-    // Reset announcement flags
+    setSelectedWorkout(null)
     setAnnouncementFlags({
       break: false,
       complete: false,
@@ -156,6 +165,7 @@ export default function WorkoutTimer() {
     })
     playSound("Timer reset")
   }
+  
 
   const handleSettingsChange = (newSettings) => {
     setSettings(newSettings)
