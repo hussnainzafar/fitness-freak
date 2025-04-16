@@ -10,6 +10,7 @@ export default function WorkoutTimer() {
   const [phase, setPhase] = useState("work") // work, rest
   const [currentRound, setCurrentRound] = useState(1)
   const [isPaused, setIsPaused] = useState(false)
+  
 
   const [settings, setSettings] = useState({
     workTime: 10,
@@ -71,49 +72,43 @@ export default function WorkoutTimer() {
 
   // Timer effect
   useEffect(() => {
-    let interval
+    let interval;
     if (isRunning) {
       interval = setInterval(() => {
         setTime((prevTime) => {
-          const newTime = prevTime + 1
-
-          if (phase === "work" && newTime >= settings.workTime) {
-            // Check if this is the last round
+          const newTime = prevTime + 1;
+  
+          if (phase === "work" && newTime > settings.workTime) {
             if (currentRound >= settings.rounds) {
-              setIsRunning(false)
-              setPhase("work")
-              setCurrentRound(1)
-              setSelectedWorkout(null) // Clear selected workout
-              // Play "Workout complete" sound
-              playSound("Workout complete")
-              return 0
+              setIsRunning(false);
+              setPhase("work");
+              setCurrentRound(1);
+              setSelectedWorkout(null);
+              playSound("Workout complete");
+              return 0;
+            } else {
+              setPhase("rest");
+              playSound("Break");
+              return 0;
             }
-
-            // Not the last round, go to rest phase
-            setPhase("rest")
-            setTime(0)
-            // Play "Break" sound
-            playSound("Break")
-            return 0
-          } else if (phase === "rest" && newTime >= settings.restTime) {
-            // Store the next round number before updating state
-            const nextRound = currentRound + 1
-            setPhase("work")
-            setTime(0)
-            setCurrentRound(nextRound)
-            // Play "Start" sound for new round
-            playSound("Start")
-            return 0
           }
-
-          return newTime
-        })
-      }, 1000)
-    } else if (!isRunning) {
-      clearInterval(interval)
+  
+          if (phase === "rest" && newTime > settings.restTime) {
+            const nextRound = currentRound + 1;
+            setPhase("work");
+            setCurrentRound(nextRound);
+            playSound("Start");
+            return 0;
+          }
+  
+          return newTime;
+        });
+      }, 1000);
     }
-    return () => clearInterval(interval)
-  }, [isRunning, phase, settings, currentRound])
+  
+    return () => clearInterval(interval);
+  }, [isRunning, phase, currentRound, settings]);
+  
 
   const formatTime = (seconds) => {
     const mins = Math.floor(seconds / 60)
@@ -122,25 +117,21 @@ export default function WorkoutTimer() {
   }
 
   const handleStart = () => {
-    setAnnouncementFlags({
-      break: false,
-      complete: false,
-      round: false,
-    })
+    setAnnouncementFlags({ break: false, complete: false, round: false })
   
     if (isPaused) {
       setIsPaused(false)
       setIsRunning(true)
       playSound("Resume workout")
     } else {
-      // Only reset everything if it's not resuming
       setCountdown(4)
       setIsCountdown(true)
       setPhase("work")
       setCurrentRound(1)
-      setTime(0)
+      setTime(settings.workTime) // ⬅️ countdown start point
     }
   }
+  
   
 
   const handleStop = () => {
@@ -157,13 +148,13 @@ export default function WorkoutTimer() {
     setTime(0)
     setPhase("work")
     setCurrentRound(1)
-    setSelectedWorkout(null)
+    // setSelectedWorkout(null)
     setAnnouncementFlags({
       break: false,
       complete: false,
       round: false,
     })
-    playSound("Timer reset")
+    // playSound("Timer reset")
   }
   
 
@@ -182,7 +173,7 @@ export default function WorkoutTimer() {
     setSavedWorkouts(updatedWorkouts)
     localStorage.setItem("savedWorkouts", JSON.stringify(updatedWorkouts))
     // Play sound when saving workout
-    playSound("Workout saved")
+    // playSound("Workout saved")
   }
 
   const handleDeleteWorkout = (workoutId) => {
@@ -195,7 +186,7 @@ export default function WorkoutTimer() {
       setSelectedWorkout(null)
     }
 
-    playSound("Workout deleted")
+    // playSound("Workout deleted")
   }
 
   const handleStartSavedWorkout = (workout) => {
@@ -283,7 +274,7 @@ export default function WorkoutTimer() {
       {/* Saved Workouts */}
       {savedWorkouts.length > 0 && (
         <div className="mt-8">
-          <h2 className="text-2xl font-bold text-white mb-4">Trainer</h2>
+          <h2 className="text-2xl font-bold text-white mb-4">Training Session</h2>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {savedWorkouts.map((workout) => (
               <WorkoutCard
